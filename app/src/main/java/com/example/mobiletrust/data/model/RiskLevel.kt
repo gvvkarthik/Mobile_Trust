@@ -1,19 +1,17 @@
 package com.example.mobiletrust.data.model
 
-enum class RiskLevel(val displayName: String, val minScore: Int, val maxScore: Int) {
-    LOW("LOW", 71, 100),
-    MEDIUM("MEDIUM", 41, 70),
-    HIGH("HIGH", 21, 40),
-    CRITICAL("CRITICAL", 0, 20);
+enum class RiskLevel(val displayName: String, val severity: Int) {
+    LOW("LOW", 0),
+    MEDIUM("MEDIUM", 1),
+    HIGH("HIGH", 2),
+    CRITICAL("CRITICAL", 3);
 
     companion object {
-        fun fromScore(score: Int): RiskLevel {
-            return when {
-                score in 71..100 -> LOW
-                score in 41..70 -> MEDIUM
-                score in 21..40 -> HIGH
-                else -> CRITICAL
-            }
+        fun fromScore(score: Int, thresholds: TrustThresholds = TrustThresholds()): RiskLevel = when {
+            score >= thresholds.lowMin -> LOW
+            score >= thresholds.mediumMin -> MEDIUM
+            score >= thresholds.highMin -> HIGH
+            else -> CRITICAL
         }
     }
 }

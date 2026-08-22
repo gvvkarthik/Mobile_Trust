@@ -1,12 +1,18 @@
 package com.example.mobiletrust.domain.predictor
 
+import com.example.mobiletrust.data.model.PenaltyBreakdown
 import com.example.mobiletrust.data.model.TrustInput
-import com.example.mobiletrust.data.model.TrustResult
+import com.example.mobiletrust.data.model.TrustPolicyConfig
 
-/**
- * Interface for Trust Prediction engines.
- * Easily replaceable with a TensorFlow Lite model in future iterations.
- */
+data class TrustPrediction(
+    val ruleScore: Int,
+    val mlScore: Int,
+    val blendedScore: Int,
+    val degradationProbability: Double,
+    val penalties: PenaltyBreakdown,
+    val inferenceNanos: Long
+)
+
 interface TrustPredictor {
-    fun predict(input: TrustInput): TrustResult
+    fun predict(input: TrustInput, config: TrustPolicyConfig): TrustPrediction
 }
