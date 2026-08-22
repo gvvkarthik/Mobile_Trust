@@ -8,6 +8,10 @@ enum class AuditLogType {
     TRUST_UPDATE,
     RISK_CHANGE,
     SECURITY_POLICY,
+    POLICY_CONFIG,
+    ML_INFERENCE,
+    ALERT,
+    FEDERATED,
     DEMO_EVENT
 }
 
