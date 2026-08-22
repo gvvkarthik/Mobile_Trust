@@ -17,6 +17,7 @@ import com.example.mobiletrust.ui.viewmodel.MobileTrustViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -222,6 +223,35 @@ class MobileTrustViewModelTest {
                 it.type == AuditLogType.SECURITY_POLICY && it.message.contains("Session recovery")
             }
         )
+    }
+
+    @Test
+    fun ruleTriggeredTerminationRaisesABlockingAlert() {
+        viewModel.onFailedLoginAttemptsChanged(5)
+        val state = viewModel.uiState.value
+
+        assertEquals(RiskLevel.LOW, state.result.riskLevel)
+        assertEquals(SecurityAction.TERMINATE_SESSION, state.result.securityAction)
+
+        val alert = state.activeAlert
+        assertNotNull(alert)
+        assertTrue(
+            "A terminated session must raise a blocking alert even when the score band is LOW",
+            alert!!.isBlocking
+        )
+    }
+
+    @Test
+    fun demoIsRefusedWhileTheSessionIsTerminated() {
+        viewModel.onFailedLoginAttemptsChanged(5)
+        assertEquals(SessionStatus.TERMINATED, viewModel.uiState.value.result.sessionStatus)
+
+        viewModel.runDemoScenario()
+        val state = viewModel.uiState.value
+
+        assertFalse("The demo must not start while the session is locked", state.isDemoRunning)
+        assertEquals(0, state.demoCurrentStep)
+        assertTrue(state.logs.any { it.message.contains("Demo refused") })
     }
 
     @Test

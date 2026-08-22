@@ -204,6 +204,13 @@ class MobileTrustViewModel(
 
     fun runDemoScenario() {
         if (_uiState.value.isDemoRunning) return
+        if (isSessionLocked()) {
+            auditLogger.log(
+                "Demo refused: session is terminated and requires re-authentication",
+                AuditLogType.SECURITY_POLICY
+            )
+            return
+        }
 
         demoJob?.cancel()
         demoJob = scope.launch {

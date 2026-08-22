@@ -17,4 +17,9 @@ data class TrustAlert(
     val action: SecurityAction,
     val trustScore: Int,
     val acknowledged: Boolean = false
-)
+) {
+    val isBlocking: Boolean get() = action == SecurityAction.TERMINATE_SESSION
+
+    val requiresReauthentication: Boolean
+        get() = action == SecurityAction.REQUIRE_REAUTHENTICATION
+}

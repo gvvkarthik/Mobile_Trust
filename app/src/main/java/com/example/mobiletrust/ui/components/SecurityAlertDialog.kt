@@ -37,7 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
-import com.example.mobiletrust.data.model.RiskLevel
+import com.example.mobiletrust.data.model.SecurityAction
 import com.example.mobiletrust.ui.theme.CyberPrimary
 import com.example.mobiletrust.ui.theme.CyberSurface
 import com.example.mobiletrust.ui.theme.CyberSurfaceVariant
@@ -55,22 +55,22 @@ fun SecurityAlertDialog(
     onReauthenticate: () -> Unit,
     onRecoverSession: () -> Unit
 ) {
-    val (headerColor, icon) = when (alert.riskLevel) {
-        RiskLevel.LOW -> Pair(CyberPrimary, Icons.Default.Security)
-        RiskLevel.MEDIUM -> Pair(RiskMediumColor, Icons.Default.WarningAmber)
-        RiskLevel.HIGH -> Pair(RiskHighColor, Icons.Default.Security)
-        RiskLevel.CRITICAL -> Pair(RiskCriticalColor, Icons.Default.Dangerous)
+    val (headerColor, icon) = when (alert.action) {
+        SecurityAction.ALLOW_ACCESS -> Pair(CyberPrimary, Icons.Default.Security)
+        SecurityAction.SHOW_SECURITY_WARNING -> Pair(RiskMediumColor, Icons.Default.WarningAmber)
+        SecurityAction.REQUIRE_REAUTHENTICATION -> Pair(RiskHighColor, Icons.Default.Security)
+        SecurityAction.TERMINATE_SESSION -> Pair(RiskCriticalColor, Icons.Default.Dangerous)
     }
 
     AlertDialog(
         onDismissRequest = {
-            if (alert.riskLevel != RiskLevel.CRITICAL) {
+            if (!alert.isBlocking) {
                 onDismiss()
             }
         },
         properties = DialogProperties(
-            dismissOnBackPress = alert.riskLevel != RiskLevel.CRITICAL,
-            dismissOnClickOutside = alert.riskLevel != RiskLevel.CRITICAL
+            dismissOnBackPress = !alert.isBlocking,
+            dismissOnClickOutside = !alert.isBlocking
         ),
         containerColor = CyberSurface,
         shape = RoundedCornerShape(16.dp),
@@ -136,8 +136,8 @@ fun SecurityAlertDialog(
             }
         },
         confirmButton = {
-            when (alert.riskLevel) {
-                RiskLevel.HIGH -> {
+            when {
+                alert.requiresReauthentication -> {
                     Button(
                         onClick = onReauthenticate,
                         colors = ButtonDefaults.buttonColors(containerColor = RiskHighColor),
@@ -152,7 +152,7 @@ fun SecurityAlertDialog(
                         Text("Re-Authenticate Now", fontWeight = FontWeight.Bold)
                     }
                 }
-                RiskLevel.CRITICAL -> {
+                alert.isBlocking -> {
                     Button(
                         onClick = onRecoverSession,
                         colors = ButtonDefaults.buttonColors(containerColor = RiskCriticalColor),
@@ -179,7 +179,7 @@ fun SecurityAlertDialog(
             }
         },
         dismissButton = {
-            if (alert.riskLevel != RiskLevel.CRITICAL) {
+            if (!alert.isBlocking) {
                 TextButton(onClick = onDismiss) {
                     Text("Dismiss", color = TextSecondary)
                 }

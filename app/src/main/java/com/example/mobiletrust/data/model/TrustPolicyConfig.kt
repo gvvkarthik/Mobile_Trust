@@ -9,7 +9,7 @@ data class TrustThresholds(
 data class TrustPolicyConfig(
     val thresholds: TrustThresholds = TrustThresholds(),
     val mlWeight: Double = 0.5,
-    val alertThreshold: Int = 70,
+    val alertThreshold: Int = TrustThresholds().lowMin,
     val rules: List<PolicyRule> = PolicyRule.defaults()
 ) {
     val ruleWeight: Double get() = 1.0 - mlWeight
