@@ -21,16 +21,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,7 +34,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -91,7 +86,7 @@ fun TrustScoreCard(
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header Row
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -114,13 +109,11 @@ fun TrustScoreCard(
                     )
                 }
 
-                // Session Status Tag
                 SessionStatusBadge(status = result.sessionStatus)
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Circular Trust Score Indicator
             CircularTrustScoreMeter(
                 score = result.trustScore,
                 color = riskColor,
@@ -129,12 +122,10 @@ fun TrustScoreCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Risk Level Badge
             RiskLevelBadge(riskLevel = result.riskLevel)
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Action / Policy Text
             Text(
                 text = "Policy: ${result.securityAction.displayName}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -142,21 +133,32 @@ fun TrustScoreCard(
                 color = riskColor
             )
 
+            if (result.matchedRules.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Enforced by: ${result.matchedRules.joinToString()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Deductions breakdown
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                DeductionChip(label = "Network", penalty = result.networkPenalty)
+                DeductionChip(label = "Network", penalty = result.penalties.network)
                 Spacer(modifier = Modifier.width(4.dp))
-                DeductionChip(label = "Device", penalty = result.deviceSecurityPenalty)
+                DeductionChip(label = "Device", penalty = result.penalties.device)
                 Spacer(modifier = Modifier.width(4.dp))
-                DeductionChip(label = "Logins", penalty = result.failedLoginsPenalty)
+                DeductionChip(label = "Logins", penalty = result.penalties.failedLogins)
                 Spacer(modifier = Modifier.width(4.dp))
-                DeductionChip(label = "Behaviour", penalty = result.behaviourPenalty)
+                DeductionChip(label = "Behaviour", penalty = result.penalties.behaviour)
+                Spacer(modifier = Modifier.width(4.dp))
+                DeductionChip(label = "Transitions", penalty = result.penalties.transitions)
             }
         }
     }
@@ -182,13 +184,11 @@ fun CircularTrustScoreMeter(
         Canvas(modifier = Modifier.size(size)) {
             val strokeWidth = 14.dp.toPx()
 
-            // Background Track
             drawCircle(
                 color = Color(0xFF21262D),
                 style = Stroke(width = strokeWidth)
             )
 
-            // Progress Arc
             drawArc(
                 color = color,
                 startAngle = -90f,

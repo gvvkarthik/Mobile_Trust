@@ -2,7 +2,6 @@ package com.example.mobiletrust.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,11 +23,8 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import com.example.mobiletrust.data.model.RiskLevel
-import com.example.mobiletrust.ui.theme.CyberBorder
 import com.example.mobiletrust.ui.theme.CyberPrimary
 import com.example.mobiletrust.ui.theme.CyberSurface
 import com.example.mobiletrust.ui.theme.CyberSurfaceVariant
@@ -51,14 +46,14 @@ import com.example.mobiletrust.ui.theme.RiskHighColor
 import com.example.mobiletrust.ui.theme.RiskMediumColor
 import com.example.mobiletrust.ui.theme.TextPrimary
 import com.example.mobiletrust.ui.theme.TextSecondary
-import com.example.mobiletrust.ui.viewmodel.SecurityAlert
+import com.example.mobiletrust.data.model.TrustAlert
 
 @Composable
 fun SecurityAlertDialog(
-    alert: SecurityAlert,
+    alert: TrustAlert,
     onDismiss: () -> Unit,
     onReauthenticate: () -> Unit,
-    onReset: () -> Unit
+    onRecoverSession: () -> Unit
 ) {
     val (headerColor, icon) = when (alert.riskLevel) {
         RiskLevel.LOW -> Pair(CyberPrimary, Icons.Default.Security)
@@ -159,7 +154,7 @@ fun SecurityAlertDialog(
                 }
                 RiskLevel.CRITICAL -> {
                     Button(
-                        onClick = onReset,
+                        onClick = onRecoverSession,
                         colors = ButtonDefaults.buttonColors(containerColor = RiskCriticalColor),
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -169,7 +164,7 @@ fun SecurityAlertDialog(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Reset & Recover Session", fontWeight = FontWeight.Bold)
+                        Text("Verify Identity & Restore Session", fontWeight = FontWeight.Bold)
                     }
                 }
                 else -> {

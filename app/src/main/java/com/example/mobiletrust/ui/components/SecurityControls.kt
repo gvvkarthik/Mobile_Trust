@@ -1,10 +1,8 @@
 package com.example.mobiletrust.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,9 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.WarningAmber
@@ -35,10 +31,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mobiletrust.data.model.BehaviourStatus
 import com.example.mobiletrust.data.model.DeviceSecurityStatus
+import com.example.mobiletrust.data.model.UserRole
 import com.example.mobiletrust.ui.theme.CyberBorder
 import com.example.mobiletrust.ui.theme.CyberPrimary
 import com.example.mobiletrust.ui.theme.CyberSurface
@@ -58,6 +56,8 @@ fun SecurityControls(
     onFailedLoginAttemptsChanged: (Int) -> Unit,
     behaviour: BehaviourStatus,
     onBehaviourChanged: (BehaviourStatus) -> Unit,
+    userRole: UserRole,
+    onUserRoleChanged: (UserRole) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -92,7 +92,6 @@ fun SecurityControls(
                 )
             }
 
-            // 1. Device Security (Secure / Compromised)
             Column {
                 Text(
                     text = "Device Integrity State",
@@ -126,7 +125,6 @@ fun SecurityControls(
                 }
             }
 
-            // 2. Failed Login Attempts (0, 1, 3, 5)
             Column {
                 Text(
                     text = "Failed Login Attempts (-5 per attempt)",
@@ -185,7 +183,6 @@ fun SecurityControls(
                 }
             }
 
-            // 3. Behaviour (Normal / Suspicious)
             Column {
                 Text(
                     text = "User & Telemetry Behaviour",
@@ -216,6 +213,60 @@ fun SecurityControls(
                         activeColor = RiskHighColor,
                         onClick = { onBehaviourChanged(BehaviourStatus.SUSPICIOUS) }
                     )
+                }
+            }
+
+            Column {
+                Text(
+                    text = "Authenticated Role",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    UserRole.entries.forEach { role ->
+                        val isSelected = userRole == role
+                        val approved = role in UserRole.PUBLIC_NETWORK_APPROVED
+                        val roleColor = if (approved) RiskLowColor else RiskMediumColor
+
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onUserRoleChanged(role) }
+                                .border(
+                                    if (isSelected) 1.5.dp else 0.8.dp,
+                                    if (isSelected) roleColor else CyberBorder,
+                                    RoundedCornerShape(8.dp)
+                                ),
+                            color = if (isSelected) roleColor.copy(alpha = 0.2f) else CyberSurfaceVariant,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = role.displayName,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) TextPrimary else TextSecondary,
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    text = if (approved) "approved" else "restricted",
+                                    fontSize = 9.sp,
+                                    color = if (isSelected) roleColor else TextSecondary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -3,18 +3,27 @@ package com.example.mobiletrust.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mobiletrust.data.model.AuditLogEntry
+import com.example.mobiletrust.data.model.AuditLogType
 import com.example.mobiletrust.data.model.BehaviourStatus
 import com.example.mobiletrust.data.model.DeviceSecurityStatus
+import com.example.mobiletrust.data.model.FederatedReport
+import com.example.mobiletrust.data.model.ModelMetrics
 import com.example.mobiletrust.data.model.NetworkType
-import com.example.mobiletrust.data.model.RiskLevel
-import com.example.mobiletrust.data.model.SecurityAction
 import com.example.mobiletrust.data.model.SessionStatus
+import com.example.mobiletrust.data.model.TrustAlert
 import com.example.mobiletrust.data.model.TrustInput
+import com.example.mobiletrust.data.model.TrustPolicyConfig
 import com.example.mobiletrust.data.model.TrustResult
-import com.example.mobiletrust.domain.predictor.RuleBasedTrustPredictor
-import com.example.mobiletrust.domain.predictor.TrustPredictor
+import com.example.mobiletrust.data.model.UserRole
+import com.example.mobiletrust.domain.engine.TrustEngine
+import com.example.mobiletrust.domain.ml.FederatedTrainer
+import com.example.mobiletrust.domain.ml.ModelEvaluator
+import com.example.mobiletrust.domain.ml.SyntheticDataset
+import com.example.mobiletrust.domain.predictor.HybridTrustPredictor
+import com.example.mobiletrust.security.AlertDispatcher
 import com.example.mobiletrust.security.AuditLogger
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,184 +31,216 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class SecurityAlert(
-    val title: String,
-    val message: String,
-    val riskLevel: RiskLevel,
-    val action: SecurityAction
-)
+import kotlinx.coroutines.withContext
 
 data class MobileTrustUiState(
-    val input: TrustInput = TrustInput(),
-    val result: TrustResult = RuleBasedTrustPredictor().predict(TrustInput()),
+    val input: TrustInput,
+    val result: TrustResult,
+    val config: TrustPolicyConfig,
     val logs: List<AuditLogEntry> = emptyList(),
+    val adminAlerts: List<TrustAlert> = emptyList(),
+    val activeAlert: TrustAlert? = null,
+    val modelMetrics: ModelMetrics = ModelMetrics.EMPTY,
+    val federatedReport: FederatedReport? = null,
+    val isFederatedRunning: Boolean = false,
     val isDemoRunning: Boolean = false,
-    val demoCurrentStep: Int = 0,
-    val activeAlert: SecurityAlert? = null
+    val demoCurrentStep: Int = 0
 )
 
 class MobileTrustViewModel(
-    private val predictor: TrustPredictor = RuleBasedTrustPredictor(),
+    private val engine: TrustEngine = TrustEngine(),
     private val auditLogger: AuditLogger = AuditLogger(),
-    coroutineScope: CoroutineScope? = null
+    private val alertDispatcher: AlertDispatcher = AlertDispatcher(auditLogger),
+    private val externalScope: CoroutineScope? = null
 ) : ViewModel() {
 
-    private val effectiveScope: CoroutineScope by lazy {
-        coroutineScope ?: viewModelScope
-    }
+    private val scope: CoroutineScope get() = externalScope ?: viewModelScope
 
-    private val _uiState = MutableStateFlow(
-        MobileTrustUiState(
-            input = TrustInput(),
-            result = predictor.predict(TrustInput()),
-            logs = auditLogger.logs.value
-        )
-    )
-    val uiState: StateFlow<MobileTrustUiState> = _uiState.asStateFlow()
+    private val _uiState: MutableStateFlow<MobileTrustUiState>
+    val uiState: StateFlow<MobileTrustUiState>
 
     private var demoJob: Job? = null
 
     init {
-        // Collect audit logs into the UI state
-        if (coroutineScope != null) {
-            coroutineScope.launch {
-                auditLogger.logs.collect { newLogs ->
-                    _uiState.update { it.copy(logs = newLogs) }
-                }
-            }
-        } else {
-            viewModelScope.launch {
-                auditLogger.logs.collect { newLogs ->
-                    _uiState.update { it.copy(logs = newLogs) }
-                }
+        val config = TrustPolicyConfig()
+        val input = TrustInput()
+        _uiState = MutableStateFlow(
+            MobileTrustUiState(
+                input = input,
+                result = engine.evaluate(input, config),
+                config = config,
+                logs = auditLogger.logs.value
+            )
+        )
+        uiState = _uiState.asStateFlow()
+
+        scope.launch {
+            auditLogger.logs.collect { logs -> _uiState.update { it.copy(logs = logs) } }
+        }
+        scope.launch {
+            alertDispatcher.adminAlerts.collect { alerts ->
+                _uiState.update { it.copy(adminAlerts = alerts) }
             }
         }
+        scope.launch {
+            alertDispatcher.userAlert.collect { alert ->
+                _uiState.update { it.copy(activeAlert = alert) }
+            }
+        }
+
+        evaluateModelMetrics()
     }
 
     fun onNetworkSelected(network: NetworkType) {
-        if (_uiState.value.input.networkType == network) return
-        updateState(_uiState.value.input.copy(networkType = network))
+        val current = _uiState.value.input
+        if (current.networkType == network) return
+        applyInput(
+            current.copy(
+                networkType = network,
+                networkTransitions = current.networkTransitions + 1
+            )
+        )
     }
 
     fun onDeviceSecurityChanged(status: DeviceSecurityStatus) {
-        if (_uiState.value.input.deviceSecurity == status) return
-        updateState(_uiState.value.input.copy(deviceSecurity = status))
+        val current = _uiState.value.input
+        if (current.deviceSecurity == status) return
+        applyInput(current.copy(deviceSecurity = status))
     }
 
     fun onFailedLoginAttemptsChanged(attempts: Int) {
-        if (_uiState.value.input.failedLoginAttempts == attempts) return
-        updateState(_uiState.value.input.copy(failedLoginAttempts = attempts))
+        val current = _uiState.value.input
+        if (current.failedLoginAttempts == attempts) return
+        applyInput(current.copy(failedLoginAttempts = attempts))
     }
 
     fun onBehaviourChanged(behaviour: BehaviourStatus) {
-        if (_uiState.value.input.behaviour == behaviour) return
-        updateState(_uiState.value.input.copy(behaviour = behaviour))
+        val current = _uiState.value.input
+        if (current.behaviour == behaviour) return
+        applyInput(current.copy(behaviour = behaviour))
     }
 
-    private fun updateState(newInput: TrustInput) {
-        val previousState = _uiState.value
-        val previousResult = previousState.result
-        val newResult = predictor.predict(newInput)
+    fun onUserRoleChanged(role: UserRole) {
+        val current = _uiState.value.input
+        if (current.userRole == role) return
+        auditLogger.logPolicyConfigChange("Active role changed to " + role.displayName)
+        applyInput(current.copy(userRole = role))
+    }
 
-        // Log specific state transitions
-        if (previousState.input.networkType != newInput.networkType) {
-            auditLogger.logNetworkChange(
-                oldNet = previousState.input.networkType.displayName,
-                newNet = newInput.networkType.displayName
-            )
-        }
+    fun onRuleToggled(ruleId: String, enabled: Boolean) {
+        val config = _uiState.value.config
+        val rule = config.rules.firstOrNull { it.id == ruleId } ?: return
+        val state = if (enabled) "enabled" else "disabled"
+        auditLogger.logPolicyConfigChange("Policy rule " + rule.name + " " + state)
+        applyConfig(config.withRuleEnabled(ruleId, enabled))
+    }
 
-        if (previousResult.trustScore != newResult.trustScore) {
-            auditLogger.logTrustScoreChange(
-                oldScore = previousResult.trustScore,
-                newScore = newResult.trustScore
-            )
-        }
+    fun onMlWeightChanged(weight: Double) {
+        val config = _uiState.value.config
+        if (config.mlWeight == weight) return
+        applyConfig(config.withMlWeight(weight))
+    }
 
-        if (previousResult.riskLevel != newResult.riskLevel) {
-            auditLogger.logRiskLevelChange(newResult.riskLevel.displayName)
-        }
-
-        if (previousResult.securityAction != newResult.securityAction) {
-            auditLogger.logSecurityPolicyTriggered(newResult.securityAction.displayName)
-        }
-
-        // Determine alert popup based on Risk Level
-        val alert = when (newResult.riskLevel) {
-            RiskLevel.LOW -> null
-            RiskLevel.MEDIUM -> SecurityAlert(
-                title = "Security Warning",
-                message = "Your device trust level has decreased.",
-                riskLevel = RiskLevel.MEDIUM,
-                action = newResult.securityAction
-            )
-            RiskLevel.HIGH -> SecurityAlert(
-                title = "Re-authentication Required",
-                message = "Your current device or network environment is considered risky.",
-                riskLevel = RiskLevel.HIGH,
-                action = newResult.securityAction
-            )
-            RiskLevel.CRITICAL -> SecurityAlert(
-                title = "Session Terminated",
-                message = "Your trust score is critically low. Access has been blocked.",
-                riskLevel = RiskLevel.CRITICAL,
-                action = newResult.securityAction
-            )
-        }
-
-        _uiState.update {
-            it.copy(
-                input = newInput,
-                result = newResult,
-                activeAlert = alert
-            )
-        }
+    fun onMlWeightCommitted() {
+        val weight = (_uiState.value.config.mlWeight * 100).toInt()
+        auditLogger.logPolicyConfigChange(
+            "Scoring blend set to $weight% ML / ${100 - weight}% rules"
+        )
     }
 
     fun dismissAlert() {
-        _uiState.update { it.copy(activeAlert = null) }
+        alertDispatcher.dismissUserAlert()
+    }
+
+    fun acknowledgeAdminAlerts() {
+        alertDispatcher.acknowledgeAdminAlerts()
+        auditLogger.log("Admin acknowledged all open alerts", AuditLogType.ALERT)
+    }
+
+    fun reauthenticateUser() {
+        auditLogger.log(
+            "Re-authentication challenge passed for role " + _uiState.value.input.userRole.displayName,
+            AuditLogType.SECURITY_POLICY
+        )
+        dismissAlert()
+        applyInput(_uiState.value.input.copy(failedLoginAttempts = 0))
+    }
+
+    fun recoverTerminatedSession() {
+        val role = _uiState.value.input.userRole.displayName
+        resetState()
+        auditLogger.log(
+            "Session recovery: identity re-verified for role $role, " +
+                "trust context re-established from baseline",
+            AuditLogType.SECURITY_POLICY
+        )
+    }
+
+    fun runFederatedRound() {
+        if (_uiState.value.isFederatedRunning) return
+        _uiState.update { it.copy(isFederatedRunning = true) }
+
+        scope.launch {
+            auditLogger.logFederated("Federated training started across simulated field clients")
+            val outcome = withContext(Dispatchers.Default) { FederatedTrainer().run() }
+            val report = outcome.report
+            val accuracy = (report.finalAccuracy * 100).toInt()
+            auditLogger.logFederated(
+                "Federated aggregation complete: ${report.rounds.size} rounds, " +
+                    "global accuracy $accuracy%, no raw samples exchanged"
+            )
+
+            val predictor = engine.predictor
+            if (predictor is HybridTrustPredictor) {
+                predictor.updateModel(outcome.globalModel)
+                auditLogger.logFederated("Aggregated model promoted to the live trust engine")
+            }
+
+            _uiState.update { it.copy(federatedReport = report, isFederatedRunning = false) }
+            evaluateModelMetrics()
+            applyInput(_uiState.value.input)
+        }
     }
 
     fun runDemoScenario() {
         if (_uiState.value.isDemoRunning) return
 
         demoJob?.cancel()
-        demoJob = effectiveScope.launch {
+        demoJob = scope.launch {
             _uiState.update { it.copy(isDemoRunning = true, demoCurrentStep = 1) }
 
-            // STEP 1: Secure baseline
-            auditLogger.logDemoEvent("Step 1", "Initializing baseline: Secure Wi-Fi, Device Secure, 0 Failed, Normal Behaviour")
-            updateState(
+            auditLogger.logDemoEvent("Step 1", "Baseline on Secure Wi-Fi with a secure device")
+            applyInput(
                 TrustInput(
                     networkType = NetworkType.SECURE_WIFI,
                     deviceSecurity = DeviceSecurityStatus.SECURE,
                     failedLoginAttempts = 0,
-                    behaviour = BehaviourStatus.NORMAL
+                    behaviour = BehaviourStatus.NORMAL,
+                    userRole = _uiState.value.input.userRole,
+                    networkTransitions = 0
                 )
             )
-            delay(2000)
+            delay(DEMO_STEP_DELAY_MS)
 
-            // STEP 2: Switch to Mobile 4G
             _uiState.update { it.copy(demoCurrentStep = 2) }
-            auditLogger.logDemoEvent("Step 2", "Simulating transition to Mobile 4G")
-            updateState(
-                _uiState.value.input.copy(
-                    networkType = NetworkType.MOBILE_4G
-                )
-            )
-            delay(2000)
+            auditLogger.logDemoEvent("Step 2", "Transition to Mobile 4G")
+            onNetworkSelected(NetworkType.MOBILE_4G)
+            delay(DEMO_STEP_DELAY_MS)
 
-            // STEP 3: Switch to Public Wi-Fi + Security Anomaly
             _uiState.update { it.copy(demoCurrentStep = 3) }
-            auditLogger.logDemoEvent("Step 3", "Simulating Public Wi-Fi connection with 3 failed logins and suspicious behaviour")
-            updateState(
+            auditLogger.logDemoEvent(
+                "Step 3",
+                "Transition to Public Wi-Fi with 3 failed logins and suspicious behaviour"
+            )
+            applyInput(
                 _uiState.value.input.copy(
                     networkType = NetworkType.PUBLIC_WIFI,
                     failedLoginAttempts = 3,
-                    behaviour = BehaviourStatus.SUSPICIOUS
+                    behaviour = BehaviourStatus.SUSPICIOUS,
+                    networkTransitions = _uiState.value.input.networkTransitions + 1
                 )
             )
+            delay(DEMO_STEP_DELAY_MS)
 
             _uiState.update { it.copy(isDemoRunning = false, demoCurrentStep = 0) }
         }
@@ -208,29 +249,107 @@ class MobileTrustViewModel(
     fun resetState() {
         demoJob?.cancel()
         demoJob = null
-        val initialInput = TrustInput(
-            networkType = NetworkType.SECURE_WIFI,
-            deviceSecurity = DeviceSecurityStatus.SECURE,
-            failedLoginAttempts = 0,
-            behaviour = BehaviourStatus.NORMAL
-        )
-        val initialResult = predictor.predict(initialInput)
-        auditLogger.resetWithStartup()
-        auditLogger.log("Application state reset to initial baseline", com.example.mobiletrust.data.model.AuditLogType.SYSTEM)
+        alertDispatcher.dismissUserAlert()
 
-        _uiState.value = MobileTrustUiState(
-            input = initialInput,
-            result = initialResult,
-            logs = auditLogger.logs.value,
-            isDemoRunning = false,
-            demoCurrentStep = 0,
-            activeAlert = null
+        val config = TrustPolicyConfig()
+        val input = TrustInput()
+        _uiState.update {
+            it.copy(
+                input = input,
+                result = engine.evaluate(input, config),
+                config = config,
+                activeAlert = null,
+                isDemoRunning = false,
+                demoCurrentStep = 0
+            )
+        }
+        auditLogger.log(
+            "Trust context reset to baseline; audit history retained",
+            AuditLogType.SYSTEM
         )
     }
 
-    fun reauthenticateUser() {
-        // Simulates a user successfully completing re-authentication
-        auditLogger.log("User successfully verified credentials via biometric / MFA re-authentication", com.example.mobiletrust.data.model.AuditLogType.SECURITY_POLICY)
-        dismissAlert()
+    private fun applyInput(input: TrustInput) {
+        if (isSessionLocked()) {
+            auditLogger.log(
+                "Blocked trust context change: session is terminated and requires re-authentication",
+                AuditLogType.SECURITY_POLICY
+            )
+            return
+        }
+        evaluate(input, _uiState.value.config)
+    }
+
+    private fun applyConfig(config: TrustPolicyConfig) {
+        if (isSessionLocked()) {
+            auditLogger.log(
+                "Blocked policy change: session is terminated and requires re-authentication",
+                AuditLogType.SECURITY_POLICY
+            )
+            return
+        }
+        evaluate(_uiState.value.input, config)
+    }
+
+    private fun isSessionLocked(): Boolean =
+        _uiState.value.result.sessionStatus == SessionStatus.TERMINATED
+
+    private fun evaluate(input: TrustInput, config: TrustPolicyConfig) {
+        val previousState = _uiState.value
+        val previousResult = previousState.result
+        val result = engine.evaluate(input, config)
+
+        if (previousState.input.networkType != input.networkType) {
+            auditLogger.logNetworkChange(
+                oldNetwork = previousState.input.networkType.displayName,
+                newNetwork = input.networkType.displayName,
+                transitionCount = input.networkTransitions
+            )
+        }
+        if (previousResult.trustScore != result.trustScore) {
+            auditLogger.logTrustScoreChange(
+                oldScore = previousResult.trustScore,
+                newScore = result.trustScore,
+                ruleScore = result.ruleScore,
+                mlScore = result.mlScore
+            )
+            auditLogger.logInference(result.degradationProbability, result.inferenceMillis)
+        }
+        if (previousResult.riskLevel != result.riskLevel) {
+            auditLogger.logRiskLevelChange(result.riskLevel.displayName)
+        }
+        if (previousResult.securityAction != result.securityAction ||
+            previousResult.matchedRules != result.matchedRules
+        ) {
+            auditLogger.logSecurityPolicyTriggered(
+                result.securityAction.displayName,
+                result.matchedRules
+            )
+        }
+
+        _uiState.update { it.copy(input = input, result = result, config = config) }
+        alertDispatcher.dispatch(previousResult, result, config)
+    }
+
+    private fun evaluateModelMetrics() {
+        val predictor = engine.predictor
+        if (predictor !is HybridTrustPredictor) return
+
+        scope.launch {
+            val model = predictor.model
+            val metrics = withContext(Dispatchers.Default) {
+                ModelEvaluator.evaluate(model, SyntheticDataset.testSet())
+            }
+            val accuracy = (metrics.accuracy * 100).toInt()
+            auditLogger.log(
+                "Model validated on ${metrics.sampleCount} synthetic samples: $accuracy% accuracy",
+                AuditLogType.ML_INFERENCE
+            )
+            _uiState.update { it.copy(modelMetrics = metrics) }
+        }
+    }
+
+    private companion object {
+        const val DEMO_STEP_DELAY_MS = 2000L
     }
 }

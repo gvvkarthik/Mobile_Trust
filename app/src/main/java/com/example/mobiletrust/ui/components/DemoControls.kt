@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,8 +35,6 @@ import androidx.compose.ui.unit.sp
 import com.example.mobiletrust.ui.theme.CyberBorder
 import com.example.mobiletrust.ui.theme.CyberPrimary
 import com.example.mobiletrust.ui.theme.CyberSurface
-import com.example.mobiletrust.ui.theme.RiskHighColor
-import com.example.mobiletrust.ui.theme.RiskLowColor
 import com.example.mobiletrust.ui.theme.TextPrimary
 import com.example.mobiletrust.ui.theme.TextSecondary
 

@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.Info
@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.PermDeviceInformation
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiOff
@@ -42,8 +43,8 @@ import com.example.mobiletrust.data.model.NetworkType
 import com.example.mobiletrust.data.model.RiskLevel
 import com.example.mobiletrust.data.model.SessionStatus
 import com.example.mobiletrust.data.model.TrustResult
+import com.example.mobiletrust.data.model.UserRole
 import com.example.mobiletrust.ui.theme.CyberBorder
-import com.example.mobiletrust.ui.theme.CyberPrimary
 import com.example.mobiletrust.ui.theme.CyberSecondary
 import com.example.mobiletrust.ui.theme.CyberSurface
 import com.example.mobiletrust.ui.theme.RiskCriticalColor
@@ -66,7 +67,7 @@ fun InformationCards(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Current Network Card
+
             val netIcon = when (result.input.networkType) {
                 NetworkType.SECURE_WIFI -> Icons.Default.Wifi
                 NetworkType.MOBILE_4G -> Icons.Default.CellTower
@@ -80,7 +81,6 @@ fun InformationCards(
                 accentColor = CyberSecondary
             )
 
-            // Risk Level Card
             val (riskColor, riskIcon) = when (result.riskLevel) {
                 RiskLevel.LOW -> Pair(RiskLowColor, Icons.Default.Shield)
                 RiskLevel.MEDIUM -> Pair(RiskMediumColor, Icons.Default.Security)
@@ -100,7 +100,7 @@ fun InformationCards(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Session Status Card
+
             val (sessionColor, sessionIcon) = when (result.sessionStatus) {
                 SessionStatus.ACTIVE -> Pair(RiskLowColor, Icons.Default.LockPerson)
                 SessionStatus.WARNING -> Pair(RiskMediumColor, Icons.Default.Info)
@@ -115,7 +115,6 @@ fun InformationCards(
                 accentColor = sessionColor
             )
 
-            // Device Security Card
             val devColor = if (result.input.deviceSecurity == DeviceSecurityStatus.SECURE) RiskLowColor else RiskCriticalColor
             InfoStatusTile(
                 modifier = Modifier.weight(1f),
@@ -130,7 +129,7 @@ fun InformationCards(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Failed Login Attempts Card
+
             val loginColor = if (result.input.failedLoginAttempts == 0) RiskLowColor else if (result.input.failedLoginAttempts <= 1) RiskMediumColor else RiskCriticalColor
             InfoStatusTile(
                 modifier = Modifier.weight(1f),
@@ -140,7 +139,6 @@ fun InformationCards(
                 accentColor = loginColor
             )
 
-            // Behaviour Status Card
             val behColor = if (result.input.behaviour == BehaviourStatus.NORMAL) RiskLowColor else RiskHighColor
             InfoStatusTile(
                 modifier = Modifier.weight(1f),
@@ -148,6 +146,33 @@ fun InformationCards(
                 value = result.input.behaviour.displayName.uppercase(),
                 icon = Icons.Default.Psychology,
                 accentColor = behColor
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val roleApproved = result.input.userRole in UserRole.PUBLIC_NETWORK_APPROVED
+            InfoStatusTile(
+                modifier = Modifier.weight(1f),
+                title = "ACTIVE ROLE",
+                value = result.input.userRole.displayName.uppercase(),
+                icon = Icons.Default.Badge,
+                accentColor = if (roleApproved) CyberSecondary else RiskMediumColor
+            )
+
+            val transitionColor = when {
+                result.input.networkTransitions == 0 -> RiskLowColor
+                result.input.networkTransitions < 4 -> RiskMediumColor
+                else -> RiskHighColor
+            }
+            InfoStatusTile(
+                modifier = Modifier.weight(1f),
+                title = "TRANSITIONS",
+                value = "${result.input.networkTransitions} this session",
+                icon = Icons.Default.SwapHoriz,
+                accentColor = transitionColor
             )
         }
     }
